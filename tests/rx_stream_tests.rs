@@ -436,3 +436,24 @@ fn dropping_the_stream_closes_it() {
         .rx_stream(StreamFormat::CS8, &[0], &Kwargs::new())
         .is_ok());
 }
+
+#[test]
+fn device_level_activation_keeps_a_held_buffer_intact() {
+    let (backend, dev, serial) = open_single();
+    let mut rx = dev
+        .rx_stream(StreamFormat::CS8, &[0], &kw(&[("buffers", "3")]))
+        .unwrap();
+    rx.activate().unwrap();
+    backend.pump_rx(&serial, &pattern(0, MTU)).unwrap();
+    let held = rx.acquire(SHORT).unwrap();
+    // Re-activating through the device (bypassing the stream) resets the
+    // queue but must not recycle the slot the user is reading.
+    dev.deactivate_rx().unwrap();
+    dev.activate_rx().unwrap();
+    backend.pump_rx(&serial, &pattern(1, MTU)).unwrap();
+    backend.pump_rx(&serial, &pattern(2, MTU)).unwrap();
+    assert_eq!(held.data(), &pattern(0, MTU)[..]);
+    drop(held);
+    let next = rx.acquire(SHORT).unwrap();
+    assert_eq!(next.data(), &pattern(1, MTU)[..]);
+}

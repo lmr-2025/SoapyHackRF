@@ -2,7 +2,7 @@ Release 0.3.5 (pending)
 ==========================
 
 - Added a Rust port of the driver (Cargo crate `soapyhackrf`) with a mock
-  backend, a 100-test suite and a report of the C++ defects (BUGS.md)
+  backend, a 104-test suite and a report of the C++ defects (BUGS.md)
 - Added frequency correction (ppm) support
 - Require SoapySDR 0.6.0 or newer for the frequency correction API
 

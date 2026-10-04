@@ -426,20 +426,23 @@ impl<B: Backend> HackRf<B> {
         let mut st = self.lock();
         {
             let mut bs = self.shared.lock();
+            let finished = st.mode == TransceiverMode::Tx && bs.tx.burst_done;
             if burst_samples > 0 {
                 bs.tx.burst_end = true;
                 bs.tx.burst_samps = burst_samples as i64;
                 bs.tx.burst_done = false;
                 bs.tx.flushed = false;
+            } else if finished {
+                bs.tx.burst_end = false;
+                bs.tx.burst_samps = 0;
+                bs.tx.burst_done = false;
+                bs.tx.flushed = false;
             }
             if st.mode == TransceiverMode::Tx {
-                if !bs.tx.burst_done {
+                if !finished {
                     return Ok(());
                 }
                 // The previous burst finished and stopped the stream: restart.
-                bs.tx.burst_end = burst_samples > 0;
-                bs.tx.burst_done = false;
-                bs.tx.flushed = false;
                 drop(bs);
                 st.handle()?
                     .stop_tx()
@@ -609,17 +612,18 @@ impl<'a, B: Backend> RxStream<'a, B> {
     /// Wait for the next filled slot; activates the stream if needed.
     fn acquire_slot(&mut self, timeout: Duration) -> Result<Held> {
         let deadline = Instant::now() + timeout;
-        if self.dev.transceiver_mode() != TransceiverMode::Rx {
-            // Wait for queued TX data to be consumed before switching.
-            {
-                let bs = self.dev.shared.lock();
-                let (_g, drained) = self.dev.shared.wait_until(bs, deadline, |b| {
-                    b.tx.ring.as_ref().map_or(true, |r| r.filled() == 0)
-                });
-                if !drained {
-                    return Err(Error::Timeout);
-                }
+        let mode = self.dev.transceiver_mode();
+        if mode == TransceiverMode::Tx {
+            // Wait for queued TX data to be transmitted before switching.
+            let bs = self.dev.shared.lock();
+            let (_g, drained) = self.dev.shared.wait_until(bs, deadline, |b| {
+                b.tx.ring.as_ref().map_or(true, |r| r.filled() == 0)
+            });
+            if !drained {
+                return Err(Error::Timeout);
             }
+        }
+        if mode != TransceiverMode::Rx {
             self.activate()?;
         }
         let bs = self.dev.shared.lock();
@@ -898,16 +902,28 @@ impl<'a, B: Backend> TxStream<'a, B> {
 
     /// Flush a partially filled remainder and mark the end of the burst.
     fn end_burst(&mut self) {
-        if let Some(h) = self.remainder.take() {
-            self.submit_slot(h.slot, h.offset);
-        }
         self.burst_target = None;
+        let remainder = self.remainder.take();
+        // One critical section: the callback must not observe the flushed
+        // buffer before the burst accounting covers it.
         let mut bs = self.dev.shared.lock();
-        let queued = bs.tx.ring.as_ref().map_or(0, |r| r.queued_bytes()) / BYTES_PER_SAMPLE;
-        bs.tx.burst_end = true;
-        bs.tx.burst_samps = queued as i64;
-        bs.tx.burst_done = false;
-        bs.tx.flushed = false;
+        if let Some(r) = bs.tx.ring.as_mut() {
+            if let Some(h) = remainder {
+                if h.offset == 0 {
+                    r.cancel_produce(h.slot);
+                } else {
+                    r.end_produce(h.slot, h.offset * BYTES_PER_SAMPLE);
+                }
+            }
+        }
+        if !bs.tx.burst_done {
+            // A declared burst may already have completed (burst_done set by
+            // the callback); in that case there is nothing left to arm.
+            let queued = bs.tx.ring.as_ref().map_or(0, |r| r.queued_bytes()) / BYTES_PER_SAMPLE;
+            bs.tx.burst_end = true;
+            bs.tx.burst_samps = queued as i64;
+            bs.tx.flushed = false;
+        }
         self.dev.shared.cv.notify_all();
     }
 
@@ -974,6 +990,10 @@ impl<'a, B: Backend> TxStream<'a, B> {
         let end_burst = flags.contains(StreamFlags::END_BURST);
         let want = src.num_samples().min(MTU_SAMPLES);
         let mut copied = 0;
+        if want == 0 {
+            // Nothing to queue; only the burst flag matters.
+            return self.finish_write(0, end_burst);
+        }
 
         if let Some(h) = self.remainder.as_mut() {
             let n = (h.samples - h.offset).min(want);

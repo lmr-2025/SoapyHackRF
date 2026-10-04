@@ -188,9 +188,12 @@ fn open_selects_a_device() {
     let dev = HackRf::open(Arc::clone(&backend), &kw(&[("serial", suffix)])).unwrap();
     assert_eq!(
         dev.serial(),
-        suffix,
-        "opened by serial suffix, as libhackrf allows"
+        b.serial(),
+        "opened by suffix, reported in full"
     );
+    assert!(claimed_serials().contains(&b.serial()));
+    let visible = find_hackrf(&backend, &kw(&[("serial", &b.serial())])).unwrap();
+    assert_eq!(visible.len(), 1, "an open device stays discoverable");
     drop(dev);
 
     assert_eq!(

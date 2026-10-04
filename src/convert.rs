@@ -19,10 +19,20 @@ pub const CONVERSION_SCALE: f64 = 127.0;
 /// Full-scale value advertised for the native CS8 format.
 pub const NATIVE_FULL_SCALE: f64 = 128.0;
 
+mod private {
+    pub trait Sealed {}
+    impl Sealed for i8 {}
+    impl Sealed for i16 {}
+    impl Sealed for f32 {}
+    impl Sealed for f64 {}
+}
+
 /// A scalar sample element type that can be converted to and from native CS8.
 ///
-/// Buffers are interleaved I/Q, so one complex sample is two elements.
-pub trait Sample: Copy + Default + Send + Sync + 'static {
+/// Buffers are interleaved I/Q, so one complex sample is two elements. The
+/// trait is sealed: the typed buffer views rely on `FORMAT` identifying the
+/// element type exactly.
+pub trait Sample: private::Sealed + Copy + Default + Send + Sync + 'static {
     /// The stream format this element type implements.
     const FORMAT: StreamFormat;
     /// Convert one native element.

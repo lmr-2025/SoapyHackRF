@@ -20,18 +20,23 @@
 //! of them are listed in `BUGS.md`.
 //!
 //! ```no_run
-//! use soapyhackrf::{Direction, HackRfDevice, Kwargs, StreamFormat};
+//! use soapyhackrf::{Direction, Kwargs, StreamFormat};
 //! use std::time::Duration;
 //!
-//! let dev = HackRfDevice::open_default(&Kwargs::new())?;
-//! dev.set_sample_rate(Direction::Rx, 0, 10e6)?;
-//! dev.set_frequency(Direction::Rx, 0, "RF", 100e6, &Kwargs::new())?;
-//! let mut rx = dev.rx_stream(StreamFormat::CF32, &[0], &Kwargs::new())?;
-//! rx.activate()?;
-//! let mut buf = vec![0f32; 2 * rx.mtu()];
-//! let n = rx.read(&mut buf, Duration::from_millis(100))?.samples;
-//! println!("got {n} samples");
-//! # Ok::<(), soapyhackrf::Error>(())
+//! # #[cfg(feature = "libhackrf")]
+//! fn main() -> Result<(), soapyhackrf::Error> {
+//!     let dev = soapyhackrf::HackRfDevice::open_default(&Kwargs::new())?;
+//!     dev.set_sample_rate(Direction::Rx, 0, 10e6)?;
+//!     dev.set_frequency(Direction::Rx, 0, "RF", 100e6, &Kwargs::new())?;
+//!     let mut rx = dev.rx_stream(StreamFormat::CF32, &[0], &Kwargs::new())?;
+//!     rx.activate()?;
+//!     let mut buf = vec![0f32; 2 * rx.mtu()];
+//!     let n = rx.read(&mut buf, Duration::from_millis(100))?.samples;
+//!     println!("got {n} samples");
+//!     Ok(())
+//! }
+//! # #[cfg(not(feature = "libhackrf"))]
+//! # fn main() {}
 //! ```
 
 #![warn(missing_docs)]

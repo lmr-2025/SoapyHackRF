@@ -12,7 +12,7 @@ tested without a radio, and fixes the defects listed in [`BUGS.md`](BUGS.md).
 ```sh
 cargo build                      # library + libhackrf backend (needs libhackrf >= 2022.09)
 cargo build --no-default-features # pure-logic build, no C library required
-cargo test                       # 100 tests, no hardware needed
+cargo test                       # 104 tests, no hardware needed
 cargo run --example enumerate    # lists attached HackRFs through libhackrf
 cargo run --example rx_record -- 100e6 10e6 2 out.cs8
 ```

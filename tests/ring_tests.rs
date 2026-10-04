@@ -109,20 +109,27 @@ fn cancel_produce_returns_the_slot() {
 }
 
 #[test]
-fn reset_forgets_everything() {
+fn reset_discards_queued_data_but_keeps_held_slots() {
     let mut r = Ring::new(3, 2);
     let s = r.begin_produce().unwrap();
     r.end_produce(s, 2);
     let s = r.begin_produce().unwrap();
     r.end_produce(s, 1);
-    let _held = r.begin_consume().unwrap();
+    let held = r.begin_consume().unwrap();
     r.reset();
     assert_eq!(
         (r.free(), r.filled(), r.producing(), r.consuming()),
-        (3, 0, 0, 0)
+        (2, 0, 0, 1)
     );
     assert_eq!(r.queued_bytes(), 0);
-    assert_eq!(r.begin_produce(), Some(0));
+    assert_eq!(r.begin_consume(), None);
+    let a = r.begin_produce().unwrap();
+    let b = r.begin_produce().unwrap();
+    assert_ne!(a, held, "the held slot is not reused");
+    assert_ne!(b, held);
+    assert_eq!(r.begin_produce(), None);
+    r.end_consume(held);
+    assert_eq!(r.begin_produce(), Some(held));
 }
 
 #[test]

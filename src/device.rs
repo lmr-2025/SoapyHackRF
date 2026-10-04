@@ -272,6 +272,12 @@ impl<B: Backend> HackRf<B> {
                 .ok_or(Error::NoDeviceMatches)?,
         };
         let handle = B::open_by_serial(&backend, &serial).map_err(Error::OpenFailed)?;
+        // libhackrf matches a serial *suffix*; record the full serial so the
+        // claim and the discovery cache agree.
+        let serial = match handle.board_partid_serialno() {
+            Ok((_, serial_no)) => format_serial(serial_no),
+            Err(_) => serial,
+        };
         claim_serial(&serial);
         Ok(HackRf {
             dev: Mutex::new(DeviceState {
@@ -292,7 +298,7 @@ impl<B: Backend> HackRf<B> {
         })
     }
 
-    /// The serial the device was opened with.
+    /// The device's full 32 character serial.
     pub fn serial(&self) -> &str {
         &self.serial
     }

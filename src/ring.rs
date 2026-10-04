@@ -194,15 +194,14 @@ impl Ring {
         }
     }
 
-    /// Forget all queued data and held slots.
+    /// Discard all queued data. Slots currently held by the producer or the
+    /// consumer stay held, so a buffer the user is still reading is never
+    /// handed out again.
     pub fn reset(&mut self) {
-        for s in &mut self.slots {
-            s.valid = 0;
+        while let Some(slot) = self.filled.pop_front() {
+            self.slots[slot].valid = 0;
+            self.free.push_back(slot);
         }
-        self.free = (0..self.slots.len()).collect();
-        self.filled.clear();
-        self.producing = 0;
-        self.consuming = 0;
     }
 }
 

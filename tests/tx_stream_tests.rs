@@ -527,3 +527,70 @@ fn closing_discards_unsent_samples() {
     tx.activate().unwrap();
     assert!(backend.pump_tx(&serial).unwrap().0.iter().all(|&b| b == 0));
 }
+
+#[test]
+fn activate_burst_after_a_finished_burst_restarts_the_stream() {
+    let (backend, dev, serial) = open_single();
+    let mut tx = dev
+        .tx_stream(StreamFormat::CS8, &[0], &Kwargs::new())
+        .unwrap();
+    tx.activate_burst(10).unwrap();
+    tx.write(&pattern(0, 10), StreamFlags::NONE, SHORT).unwrap();
+    backend.pump_tx(&serial).unwrap();
+    assert!(!backend.pump_tx(&serial).unwrap().1.keep_streaming);
+    assert!(tx.burst_done());
+    backend.clear_calls();
+    tx.activate_burst(5).unwrap();
+    assert_eq!(backend.calls()[..2], [Call::StopTx, Call::StartTx]);
+    assert!(!tx.burst_done());
+    tx.write(&pattern(1, 5), StreamFlags::NONE, SHORT).unwrap();
+    let (buf, fill) = backend.pump_tx(&serial).unwrap();
+    assert_eq!(fill.valid_len, 10);
+    assert_eq!(&buf[..10], &pattern(1, 5)[..]);
+    assert!(!backend.pump_tx(&serial).unwrap().1.keep_streaming);
+}
+
+#[test]
+fn end_burst_does_not_undo_a_burst_the_callback_already_finished() {
+    let (backend, dev, serial) = open_single();
+    let mut tx = dev
+        .tx_stream(StreamFormat::CS8, &[0], &Kwargs::new())
+        .unwrap();
+    tx.activate_burst(MTU).unwrap();
+    // Fill the whole burst through the direct-access API so the callback can
+    // run before the stream object learns the burst target was reached.
+    {
+        let mut b = tx.acquire(SHORT).unwrap();
+        b.data()[0] = 7;
+        b.submit(MTU, StreamFlags::NONE);
+    }
+    backend.pump_tx(&serial).unwrap();
+    assert!(!backend.pump_tx(&serial).unwrap().1.keep_streaming);
+    assert!(tx.burst_done());
+    // A late END_BURST with nothing queued must leave the finished state.
+    assert_eq!(
+        tx.write(&pattern(0, 0), StreamFlags::END_BURST, SHORT)
+            .unwrap(),
+        0
+    );
+    assert!(tx.burst_done());
+}
+
+#[test]
+fn rx_read_after_tx_deactivate_switches_despite_queued_samples() {
+    let (backend, dev, serial) = open_single();
+    let mut tx = dev
+        .tx_stream(StreamFormat::CS8, &[0], &Kwargs::new())
+        .unwrap();
+    let mut rx = dev
+        .rx_stream(StreamFormat::CS8, &[0], &Kwargs::new())
+        .unwrap();
+    tx.write(&pattern(0, MTU), StreamFlags::NONE, SHORT)
+        .unwrap();
+    tx.deactivate().unwrap();
+    let mut buf = vec![0i8; 2 * MTU];
+    assert_eq!(rx.read(&mut buf, SHORT).err(), Some(Error::Timeout));
+    assert_eq!(dev.transceiver_mode(), TransceiverMode::Rx);
+    backend.pump_rx(&serial, &pattern(1, MTU)).unwrap();
+    assert_eq!(rx.read(&mut buf, SHORT).unwrap().samples, MTU);
+}
