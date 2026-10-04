@@ -615,9 +615,11 @@ impl<'a, B: Backend> RxStream<'a, B> {
         let mode = self.dev.transceiver_mode();
         if mode == TransceiverMode::Tx {
             // Wait for queued TX data to be transmitted before switching.
+            // Once a burst has completed the callback no longer drains the
+            // ring, so there is nothing to wait for.
             let bs = self.dev.shared.lock();
             let (_g, drained) = self.dev.shared.wait_until(bs, deadline, |b| {
-                b.tx.ring.as_ref().map_or(true, |r| r.filled() == 0)
+                b.tx.burst_done || b.tx.ring.as_ref().map_or(true, |r| r.filled() == 0)
             });
             if !drained {
                 return Err(Error::Timeout);

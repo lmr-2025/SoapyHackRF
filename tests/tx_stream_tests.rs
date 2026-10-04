@@ -594,3 +594,29 @@ fn rx_read_after_tx_deactivate_switches_despite_queued_samples() {
     backend.pump_rx(&serial, &pattern(1, MTU)).unwrap();
     assert_eq!(rx.read(&mut buf, SHORT).unwrap().samples, MTU);
 }
+
+#[test]
+fn rx_read_after_a_finished_burst_does_not_wait_for_leftover_slots() {
+    let (backend, dev, serial) = open_single();
+    let mut tx = dev
+        .tx_stream(StreamFormat::CS8, &[0], &Kwargs::new())
+        .unwrap();
+    let mut rx = dev
+        .rx_stream(StreamFormat::CS8, &[0], &Kwargs::new())
+        .unwrap();
+    tx.activate_burst(10).unwrap();
+    // Over-fill the declared burst through the direct-access API: the second
+    // slot is never counted toward the burst.
+    tx.acquire(SHORT).unwrap().submit(10, StreamFlags::NONE);
+    tx.acquire(SHORT).unwrap().submit(5, StreamFlags::NONE);
+    backend.pump_tx(&serial).unwrap();
+    assert!(!backend.pump_tx(&serial).unwrap().1.keep_streaming);
+    assert!(tx.burst_done());
+    let mut buf = vec![0i8; 2 * MTU];
+    assert_eq!(rx.read(&mut buf, SHORT).err(), Some(Error::Timeout));
+    assert_eq!(
+        dev.transceiver_mode(),
+        TransceiverMode::Rx,
+        "switched despite the leftover slot"
+    );
+}
