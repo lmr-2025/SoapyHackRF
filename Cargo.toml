@@ -1,0 +1,30 @@
+[package]
+name = "soapyhackrf"
+version = "0.4.0"
+edition = "2021"
+rust-version = "1.70"
+license = "MIT"
+description = "Rust port of the SoapyHackRF driver: HackRF device control and streaming with a mockable backend"
+repository = "https://github.com/lmr-2025/soapyhackrf"
+readme = "README.md"
+keywords = ["hackrf", "sdr", "radio", "soapysdr"]
+categories = ["hardware-support"]
+
+[features]
+default = ["libhackrf"]
+# Real hardware backend: links against libhackrf (>= 2022.09, needs hackrf_enable_tx_flush).
+libhackrf = []
+
+[dependencies]
+
+[[example]]
+name = "enumerate"
+required-features = ["libhackrf"]
+
+[[example]]
+name = "rx_record"
+required-features = ["libhackrf"]
+
+[[example]]
+name = "tx_tone"
+required-features = ["libhackrf"]
